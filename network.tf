@@ -70,7 +70,7 @@ resource "azurerm_subnet" "snet_vdi_cfg2" {
   name                 = "snet-vdi-cfg2"
   resource_group_name  = azurerm_resource_group.facets_core.name
   virtual_network_name = azurerm_virtual_network.main.name
-  address_prefixes     = ["10.0.12.0/22"]
+  address_prefixes     = ["10.0.20.0/22"]
 }
 
 # Subnets for cfg3

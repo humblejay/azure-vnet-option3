@@ -2,11 +2,17 @@
 *.tfstate
 *.tfstate.*
 *.tfvars
+*.tfvars.json
 !terraform.tfvars.example
 .terraform/
 .terraform.lock.hcl
 crash.log
 crash.*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
 
 # OS generated files
 .DS_Store

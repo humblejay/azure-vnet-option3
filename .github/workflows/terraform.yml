@@ -1,0 +1,124 @@
+name: 'Terraform Azure Infrastructure'
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      terraform_action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+
+env:
+  TF_VERSION: '1.5.0'
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+  ARM_USE_AZUREAD: true
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    environment: production
+
+    # Use the Bash shell regardless of the GitHub Actions runner
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # Verify Azure credentials are set
+    - name: Verify Azure Credentials
+      run: |
+        if [[ -z "$ARM_CLIENT_ID" || -z "$ARM_CLIENT_SECRET" || -z "$ARM_SUBSCRIPTION_ID" || -z "$ARM_TENANT_ID" ]]; then
+          echo "Error: One or more required Azure credentials are missing"
+          echo "Please ensure ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_SUBSCRIPTION_ID, and ARM_TENANT_ID are set as repository secrets"
+          exit 1
+        fi
+        echo "✅ Azure credentials are configured"
+
+    # Install the latest version of Terraform CLI
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+        terraform_wrapper: false
+
+    # Initialize a new or existing Terraform working directory by creating initial files
+    - name: Terraform Init
+      run: |
+        echo "Initializing Terraform..."
+        terraform init -input=false
+
+    # Validate terraform files
+    - name: Terraform Validate
+      run: |
+        echo "Validating Terraform configuration..."
+        terraform validate
+
+    # Format check
+    - name: Terraform Format Check
+      run: |
+        echo "Checking Terraform formatting..."
+        terraform fmt -check -recursive
+      continue-on-error: true
+
+    # Generates an execution plan for Terraform
+    - name: Terraform Plan
+      run: |
+        echo "Creating Terraform plan..."
+        terraform plan -input=false -detailed-exitcode \
+          -var="subscription_id=$ARM_SUBSCRIPTION_ID" \
+          -var="client_id=$ARM_CLIENT_ID" \
+          -var="client_secret=$ARM_CLIENT_SECRET" \
+          -var="tenant_id=$ARM_TENANT_ID" \
+          -out=tfplan
+      continue-on-error: true
+      id: plan
+
+    # Save plan output
+    - name: Save Terraform Plan
+      if: steps.plan.outcome == 'success'
+      run: |
+        terraform show -no-color tfplan > plan.txt
+        echo "Plan saved to plan.txt"
+
+    # On push to "main", build or change infrastructure according to Terraform configuration files
+    - name: Terraform Apply
+      if: |
+        (github.ref == 'refs/heads/main' && github.event_name == 'push') ||
+        (github.event_name == 'workflow_dispatch' && inputs.terraform_action == 'apply')
+      run: |
+        echo "Applying Terraform configuration..."
+        terraform apply -auto-approve -input=false \
+          -var="subscription_id=$ARM_SUBSCRIPTION_ID" \
+          -var="client_id=$ARM_CLIENT_ID" \
+          -var="client_secret=$ARM_CLIENT_SECRET" \
+          -var="tenant_id=$ARM_TENANT_ID"
+
+    # Optional destroy step (manual trigger only)
+    - name: Terraform Destroy
+      if: github.event_name == 'workflow_dispatch' && inputs.terraform_action == 'destroy'
+      run: |
+        echo "Destroying Terraform infrastructure..."
+        terraform destroy -auto-approve -input=false \
+          -var="subscription_id=$ARM_SUBSCRIPTION_ID" \
+          -var="client_id=$ARM_CLIENT_ID" \
+          -var="client_secret=$ARM_CLIENT_SECRET" \
+          -var="tenant_id=$ARM_TENANT_ID"
